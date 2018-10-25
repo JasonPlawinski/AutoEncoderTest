@@ -13,6 +13,7 @@ from torch.optim import lr_scheduler
 from torch.autograd import Variable
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
+import matplotlib; matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from PIL import Image
 import skimage.transform
@@ -23,128 +24,52 @@ from skimage import feature
 class Q_net(nn.Module):
     def __init__(self):
         super(Q_net, self).__init__()
-        self.Input = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(1,64,3,1,0),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True))
-        
-        self.layer1 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(64,128,3,1,0),
-            nn.InstanceNorm2d(128),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True))
-        
-        self.layer2 = nn.Sequential(
-            nn.Conv2d(128,128,3,2,0),
-            nn.InstanceNorm2d(128),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True))
-            
-        self.layer3 = nn.Sequential(
-            nn.Conv2d(128,128,3,2,0),
-            nn.InstanceNorm2d(128),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True))
-            
-        self.layer4 = nn.Sequential(
-            nn.Conv2d(128,128,3,2,0),
-            nn.InstanceNorm2d(128),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True))
-        
-        self.LinLayers = nn.Sequential(
-            nn.Linear(512, 500),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(500, 500),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True)
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 8, 3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(8, 8, 3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(8, 8, 3, stride=2, padding=1),
+            nn.AvgPool2d(2, stride=2),
+            nn.ReLU(True),
+            nn.Conv2d(8, 16, 3, stride=2, padding=1),
+            nn.AvgPool2d(2, stride=1),
+            nn.Conv2d(16, 2, 3, stride=2, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(2, 2, 2, stride=1, padding=0),
+            nn.ReLU(True)
         )
-            
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                #init.orthogonal(m.weight, math.sqrt(2))
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                if m.bias is not None:
-                    m.bias.data.zero_()
-    
-    def forward(self, x, batch_size):
-        out = self.Input(x)
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = out.view([batch_size,1,-1])
-        out = self.LinLayers(out)
+        
+    def forward(self, x):
+        out = self.encoder(x)
         return out
     
 # Decoder
 class P_net(nn.Module):
     def __init__(self):
         super(P_net, self).__init__()
-        self.LinLayers = nn.Sequential(
-            nn.Linear(500, 800),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(800, 784),
-            nn.Dropout(p=0.25),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(2, 8, 2, stride=2, padding=0),
+            nn.ReLU(True),
+            nn.Conv2d(8, 8, 3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(8, 8, 3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(8, 16, 3, stride=2, padding=1),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(16, 16, 2, stride=3, padding=0),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(16, 8, 2, stride=2, padding=1),
+            nn.ReLU(True),
+            nn.ConvTranspose2d(8, 8, 2, stride=2, padding=0),
+            nn.ReLU(True),
+            nn.Conv2d(8, 8, 3, stride=1, padding=1),
+            nn.ReLU(True),
+            nn.Conv2d(8, 1, 3, stride=1, padding=1),
+            nn.Tanh())
             
-        self.layer1 = nn.Sequential(
-            nn.Conv2d(16,64,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.PixelShuffle(2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(16,64,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.Conv2d(64,64,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.InstanceNorm2d(64))
-            
-        
-        self.layer2 = nn.Sequential(
-            nn.PixelShuffle(2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(16,64,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.Conv2d(64,64,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.InstanceNorm2d(64))
-        
-      
-        self.Output = nn.Sequential(
-            nn.Conv2d(64,128,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.Conv2d(128,128,3,1,1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(p=0.25),
-            nn.Conv2d(128,1,3,1,1),
-            nn.Sigmoid())
-            
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                #init.orthogonal(m.weight, math.sqrt(2))
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            
-    def forward(self, x, batch_size):
-        out = self.LinLayers(x)
-        out = out.view([batch_size,-1,7,7])
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.Output(out)
+    def forward(self, x):
+        out = self.decoder(x)
         return out
 
 
@@ -153,11 +78,12 @@ X_dim = 784
 N = 150
 N0 = 25
 z_dim = 2
+gen_lr = 0.0005
 
 # Download Data
 
-mnist_train = datasets.MNIST('/home/jasonplawinski/Documents/EncoderTest', train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
-mnist_test  = datasets.MNIST('/home/jasonplawinski/Documents/EncoderTest', train=False, transform=transforms.ToTensor(), target_transform=None, download=True)
+mnist_train = datasets.MNIST('./', train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
+mnist_test  = datasets.MNIST('./', train=False, transform=transforms.ToTensor(), target_transform=None, download=True)
 
 # Set Data Loader(input pipeline)
 
@@ -180,7 +106,6 @@ params = sum([np.prod(p.size()) for p in P_parameters])
 print("Learnable parameters in Decoder :", params)
 
 # Set learning rates
-gen_lr, reg_lr = 0.0005, 0.0008
 # Set optimizators
 P_decoder = optim.Adam(P.parameters(), lr=gen_lr)
 Q_encoder = optim.Adam(Q.parameters(), lr=gen_lr)
@@ -189,13 +114,14 @@ criterionL1 = nn.MSELoss().cuda()
 
 TINY = 1e-8
 
-for i in range(1):
+for i in range(150):
     loss = []
     print(i)
+
     for batch, label in train_loader:
         X = Variable(batch).cuda()
-        z_sample = Q(X, batch_size)
-        X_sample = P(z_sample, batch_size)
+        z_sample = Q(X)
+        X_sample = P(z_sample)
         recon_loss = criterionL1(X_sample, X)
         P_decoder.zero_grad()
         Q_encoder.zero_grad()
@@ -227,9 +153,9 @@ for i in range(400):
     testimg = pair[0]
     label = pair[1]
     testimg = Variable(testimg).cuda()
-    coor = Q(testimg, 1)
-    coorformat0 = coor[0][0][0].data.cpu().numpy()
-    coorformat1 = coor[0][0][1].data.cpu().numpy()
+    coor = Q(testimg)
+    coorformat0 = coor[0][0].data.cpu().numpy()
+    coorformat1 = coor[0][1].data.cpu().numpy()
     label = label.cpu().numpy()[0]
     if label == 0:
         List0x.append(coorformat0)
@@ -254,18 +180,16 @@ pair = iter(test_loader).next()
 testimg = pair[0]
 label = pair[1]
 testimg = Variable(testimg).cuda()
-rec = P(Q(testimg, 1),1)
+rec = P(Q(testimg))
 
-print(testimg.size())
 plt.imshow(testimg.cpu().numpy()[0][0][:], cmap='gray')
-plt.show()
+plt.savefig('./digit.png',dpi = 300)
 
-print(rec.size())
+plt.clf()
 plt.imshow(rec.data.cpu().numpy()[0][0][:], cmap='gray')
-plt.show()
+plt.savefig('./recon.png',dpi = 300)
 
-print(rec)
-
+plt.clf()
 plt.scatter(List0x,List0y,label='0', s=20)
 plt.scatter(List1x,List1y,label='1', s=20)
 plt.scatter(List2x,List2y,label='2', s=20)
