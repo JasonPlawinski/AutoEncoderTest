@@ -1,3 +1,6 @@
+'''This script is used to generate a video to visualize the network creating a meaningful embedding in the latent space.
+To see commented code refer to AE.py'''
+
 import math
 import pickle
 import torch
@@ -93,8 +96,8 @@ gen_lr = 0.0001
 
 # Download Data
 
-mnist_train = datasets.MNIST('./home/jasonplawinski/Documents/EncoderTest', train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
-mnist_test  = datasets.MNIST('./home/jasonplawinski/Documents/EncoderTest', train=False, transform=transforms.ToTensor(), target_transform=None, download=True)
+mnist_train = datasets.MNIST('./', train=True, transform=transforms.ToTensor(), target_transform=None, download=True)
+mnist_test  = datasets.MNIST('./', train=False, transform=transforms.ToTensor(), target_transform=None, download=True)
 
 # Set Data Loader(input pipeline)
 
@@ -113,10 +116,10 @@ P = P.cuda()
 P_decoder = optim.Adam(P.parameters(), lr=gen_lr)
 Q_encoder = optim.Adam(Q.parameters(), lr=gen_lr)
 
-criterionL1 = nn.L1Loss().cuda()
+criterionMSE = nn.MSELoss().cuda()
 
 imgnumber = 0
-
+'''Same as the Auto Encoder Network except every 100th iteration (each iteration of batch with size 100 so every 10 000 images, since the dataset is composed of 50 000 images it means 5 images per epoch), an image is saved'''
 for epoch in range(20):
     print(epoch)
     
